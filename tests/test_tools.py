@@ -1,4 +1,6 @@
-"""工具层测试：计算器安全、天气确定性、todo 操作、注册表契约。"""
+"""工具层测试：计算器安全、搜索回退、天气确定性、todo 操作、注册表契约。"""
+
+import json
 
 import pytest
 
@@ -44,6 +46,36 @@ def test_calculator_rejects_injection(registry):
 def test_calculator_syntax_error(registry):
     r = registry.execute("calculator", {"expression": "sqrt("})
     assert r.error
+
+
+# ----------------------------------------------------------------------
+# search
+
+
+def test_search_with_injected_backend():
+    """注入假后端：验证真实路径返回后端结果（不依赖网络）。"""
+    from agent.tools.search import SearchTool
+
+    tool = SearchTool(backend=lambda q: [{"title": f"结果-{q}", "url": "https://x/", "snippet": "摘要"}])
+    rows = json.loads(tool.execute("agent"))
+    assert rows[0]["title"] == "结果-agent"
+
+
+def test_search_fallback_on_backend_error():
+    """后端抛错 → 回退本地演示数据，不崩、不抛。"""
+    from agent.tools.search import SearchTool
+
+    def boom(q):
+        raise RuntimeError("network down")
+
+    tool = SearchTool(backend=boom)
+    rows = json.loads(tool.execute("agent"))
+    assert rows and rows[0]["title"]
+
+
+def test_search_empty_query_rejected(registry):
+    r = registry.execute("search", {"query": "  "})
+    assert r.error and "不能为空" in r.error
 
 
 # ----------------------------------------------------------------------
