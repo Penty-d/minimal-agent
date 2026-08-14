@@ -40,39 +40,21 @@ vibecoding 之后，在使用 /use 命令时，我发现对话历史并未回显
 
 ### 4. search 工具没法真正搜索
 
-search 初版是罐头 mock，按关键词查写死的字典，未命中就返回兜底文本，名不副实。
+search 初版是 mock，按关键词查写死的字典。
 
 解决：改用必应 RSS（format=rss）免 Key 返回真实网页结果，国内网络可用；网络不可用时回退内置演示数据，工具永不崩；后端可注入，便于日后替换为带 Key 的正式搜索 API。
 
-### 5. DeepSeek 协议与印象不符
-
-实现前以为模型名是 deepseek-chat、思考过程不回传。联网核对官方文档发现：当前模型是 deepseek-v4-flash / pro，思考模式默认开启，带 tool_calls 的 assistant 消息在后续请求中需要回传 reasoning_content（否则部分版本报 400），且 arguments 是 JSON 字符串、模型不一定生成合法 JSON。
-
-解决：配置改用新模型名；Message 序列化时只对带 tool_calls 的 assistant 消息回传 reasoning_content；解析器对 arguments 做容错。
-
-### 6. calculator 工具描述与实现不一致
-
-描述示例写了 `5^2`，但实现只支持 `**`（`^` 在 Python 中是异或），模型照描述调用会失败。
-
-解决：让工具描述与实现完全一致（改为 `5**2`）。
-
-### 7. Mock 规则式无限重调同一工具
-
-规则式 MockLLM 只看最后一条 user 消息；工具结果回喂后没有新的 user 消息，于是无限重调同一工具直到撞轮次上限。
-
-解决：Mock 识别"最后一条 user 之后存在 tool 结果"即视为模型已拿到信息、直接作答，模拟真实模型行为。
-
-### 8. 用户输入未写入 session 历史
+### 5. 用户输入未写入 session 历史
 
 初版只在请求里追加用户消息，没写进 session.history，导致持久化缺 user 轮、追问断档。
 
 解决：runtime 先 history.append(user_msg) 再组装请求。
 
-### 9. Context 截断破坏工具配对
+### 6. Context 截断破坏工具配对
 
 按 token 预算截断时，切割点可能落在 tool 消息上，导致发给 API 的请求以 tool 消息开头，违反"tool 消息必须紧跟产生它的 assistant 消息"的协议。
 
-解决：截断后修边界丢掉孤立的 tool 消息；请求列表一次组装、循环追加，保证配对永远成立。
+解决：截断后直接丢掉tool信息。
 
 
 ## 三、给后续使用者的建议
