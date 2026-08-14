@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from agent.core.memory import MemoryStore
+from agent.core.memory import MAX_MEMORY_LEN, MemoryStore
 from agent.tools.base import Tool, ToolError, ToolSpec
 
 
@@ -18,6 +18,7 @@ class MemoryTool(Tool):
             "当用户给出值得长期记住的事实、偏好、约定时调用 save；"
             "需要回忆历史信息时调用 recall；查看全部用 list。"
             "新会话开始时会自动带上已有记忆的索引。"
+            f"注意：单条记忆必须压缩成不超过 {MAX_MEMORY_LEN} 字的一句话，超长会被拒绝。"
         ),
         parameters={
             "type": "object",
@@ -48,7 +49,10 @@ class MemoryTool(Tool):
         if op == "save":
             if not content.strip():
                 raise ToolError("content 不能为空")
-            e = self._store.save(content, type)
+            try:
+                e = self._store.save(content, type)
+            except ValueError as err:      # 超长等数据层拒绝 → 转成工具错误回喂模型
+                raise ToolError(str(err))
             return f"已保存记忆 [{e['id']}] ({e['type']})：{e['content']}"
         if op == "recall":
             hits = self._store.recall(query, int(top_k or 5))

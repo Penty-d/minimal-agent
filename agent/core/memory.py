@@ -16,18 +16,25 @@ import time
 import uuid
 
 _TYPES = ["偏好", "事实", "事件", "其他"]
+MAX_MEMORY_LEN = 100        # 单条记忆硬性长度上限（一句话）
 
 
 class MemoryStore:
-    def __init__(self, path: str = "data/memory.json"):
+    def __init__(self, path: str = "data/memory.json", max_len: int = MAX_MEMORY_LEN):
         self._path = path
+        self._max_len = max_len
         self._entries: list[dict] = []
         self._load()
 
     # ------------------------------------------------------------------
     def save(self, content: str, type_: str = "事实") -> dict:
-        """保存一句记忆。与已有记忆高度相似（一方包含另一方）时合并刷新。"""
+        """保存一句记忆。超长直接拒绝；与已有记忆高度相似（一方包含另一方）时合并刷新。"""
         content = content.strip()
+        if len(content) > self._max_len:
+            raise ValueError(
+                f"记忆内容过长（{len(content)} 字，上限 {self._max_len} 字），"
+                f"请压缩成一句话再保存"
+            )
         type_ = type_ if type_ in _TYPES else "事实"
 
         for e in self._entries:                    # 简单去重：包含关系视为重复 → 合并

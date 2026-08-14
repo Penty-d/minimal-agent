@@ -1,5 +1,7 @@
 """跨会话长期记忆测试：存取、去重、召回、持久化、工具、context 注入。"""
 
+import pytest
+
 from agent.core.memory import MemoryStore
 from agent.core.session import SessionManager
 from agent.tools.memory import MemoryTool
@@ -65,6 +67,21 @@ def test_tool_save_recall_list(tmp_path):
     hits = tool.execute("recall", query="中文")
     assert "中文" in hits
     assert "（长期记忆为空）" not in tool.execute("list")
+
+
+def test_save_rejects_overlong_content(tmp_path):
+    """写入时硬性长度限制：超长直接拒绝并提示压缩。"""
+    from agent.tools.base import ToolError
+
+    store = _tmp_store(tmp_path)
+    long_text = "这是一句被拉得很长的记忆内容，远远超过一句话的合理长度，" * 5
+
+    with pytest.raises(ValueError, match="过长"):
+        store.save(long_text)
+
+    tool = MemoryTool(store)
+    with pytest.raises(ToolError, match="上限"):
+        tool.execute("save", content=long_text)
 
 
 def test_tool_unknown_operation(tmp_path):
