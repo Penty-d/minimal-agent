@@ -58,10 +58,6 @@ def _default_rules() -> list[MockRule]:
         item = text.split("：")[-1].split(":")[-1].strip() or text
         return RawLLMResponse(tool_calls=[_tool_call("todo", {"operation": "add", "item": item}, 3)])
 
-    def memory_recall(text: str) -> RawLLMResponse:
-        query = re.sub(r"^(还记得|记得|回忆)\s*[:：]?\s*", "", text).strip() or text
-        return RawLLMResponse(tool_calls=[_tool_call("memory", {"operation": "recall", "query": query}, 4)])
-
     def memory_save(text: str) -> RawLLMResponse:
         content = re.sub(r"^(记住|请记住|记好)\s*[:：]?\s*", "", text).strip() or text
         type_ = "偏好" if re.search(r"(偏好|习惯)", text) else "事实"
@@ -72,8 +68,6 @@ def _default_rules() -> list[MockRule]:
     return [
         # 提到天气，或提到某个已知城市（追问"那上海呢"时，模型会结合上下文理解为查上海天气）
         MockRule(re.compile(r"天气|" + "|".join(CITIES)), weather),
-        # 先判"记得/回忆"（再判"记住/偏好"，避免"还记得我的偏好吗"被当成保存）
-        MockRule(re.compile(r"记得|回忆"), memory_recall),
         MockRule(re.compile(r"记住|偏好|习惯|长期记忆"), memory_save),
         MockRule(re.compile(r"计算|多少|等于|求和|\d+\s*[-+*/]\s*\d+"), calculator),
         MockRule(re.compile(r"搜索|查一查|查一下", re.I), search),
@@ -115,6 +109,18 @@ class MockLLM:
                 return RawLLMResponse(content=f"（mock 已基于工具结果回答）\n{results[-1]}")
 
         last_user = messages[last_user_idx]["content"] if last_user_idx is not None else ""
+
+        # 主召回途径：会话开始注入的记忆块 → 用户问记忆相关时直接引用
+        if re.search(r"记得|回忆", last_user):
+            block = next(
+                (m["content"] for m in messages
+                 if m.get("role") == "system" and "[跨会话记忆]" in (m.get("content") or "")),
+                None,
+            )
+            if block:
+                return RawLLMResponse(content=f"（mock 引用会话开始时注入的记忆）\n{block}")
+            return RawLLMResponse(content="（mock）暂时没有相关长期记忆。")
+
         for rule in self._rules:
             if rule.pattern.search(last_user):
                 return rule.respond(last_user)
