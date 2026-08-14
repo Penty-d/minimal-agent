@@ -59,7 +59,8 @@ def _default_rules() -> list[MockRule]:
         return RawLLMResponse(tool_calls=[_tool_call("todo", {"operation": "add", "item": item}, 3)])
 
     return [
-        MockRule(re.compile(r"天气"), weather),
+        # 提到天气，或提到某个已知城市（追问"那上海呢"时，模型会结合上下文理解为查上海天气）
+        MockRule(re.compile(r"天气|" + "|".join(CITIES)), weather),
         MockRule(re.compile(r"计算|多少|等于|求和|\d+\s*[-+*/]\s*\d+"), calculator),
         MockRule(re.compile(r"搜索|查一查|查一下", re.I), search),
         MockRule(re.compile(r"记(下|录)?|待办|todo|周报|备忘"), todo),
