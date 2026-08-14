@@ -49,14 +49,12 @@ def paint(code: str, text: str) -> str:
 GREEN, RED, CYAN, BOLD, DIM = "32", "31", "36", "1", "2"
 
 
-def _truncate(text: str, n: int = 120) -> str:
-    """单行截断，用于历史回显。"""
-    text = " ".join(text.split())
-    return text if len(text) <= n else text[:n] + "…"
-
-
 def _show_history(session, limit: int = 12) -> None:
-    """回显会话历史：用户提问 + Agent 回答 + 工具调用（工具原始结果跳过）。"""
+    """回显会话历史：用户提问与 Agent 回答完整显示，工具调用只给摘要。
+
+    工具结果与思考过程属于内部过程，回显时跳过；但模型输出必须完整，
+    因为切回旧会话是要接着聊。
+    """
     hist = session.history[-limit:]
     if not hist:
         print(paint(DIM, "（该会话暂无对话记录）"))
@@ -64,13 +62,12 @@ def _show_history(session, limit: int = 12) -> None:
     print(paint(BOLD, f"—— 会话「{session.name}」历史 ——"))
     for m in hist:
         if m.role == "user":
-            print(f"你: {_truncate(m.content)}")
+            print(f"你: {m.content}")
         elif m.role == "assistant" and m.tool_calls:
             names = ", ".join(tc["name"] for tc in m.tool_calls)
             print(paint(DIM, f"  ↳ 调用工具: {names}"))
         elif m.role == "assistant":
-            print(paint(GREEN, f"Agent: {_truncate(m.content)}"))
-        # tool 角色消息是内部过程，回显时跳过
+            print(paint(GREEN, f"Agent: {m.content}"))
     print(paint(BOLD, "—— 历史结束 ——"))
 
 # ----------------------------------------------------------------------
