@@ -92,12 +92,14 @@ class ToolRegistry:
         return {k: v for k, v in arguments.items() if not props or k in props or k in required}
 
 
-def build_session_registry(todo_store) -> ToolRegistry:
+def build_session_registry(todo_store, memory_store=None) -> ToolRegistry:
     """为单个会话构建工具注册表。
 
-    todo 是会话级工具：绑定该会话的 TodoStore，实现"各窗口待办互不影响"。
+    - todo 是会话级工具：绑定该会话的 TodoStore，实现"各窗口待办互不影响"。
+    - memory 是全局工具：绑定跨会话的 MemoryStore，所有会话共享同一份长期记忆。
     """
     from agent.tools.calculator import CalculatorTool
+    from agent.tools.memory import MemoryTool
     from agent.tools.search import SearchTool
     from agent.tools.todo import TodoTool
     from agent.tools.weather import WeatherTool
@@ -107,4 +109,6 @@ def build_session_registry(todo_store) -> ToolRegistry:
     registry.register(SearchTool())
     registry.register(WeatherTool())
     registry.register(TodoTool(todo_store))
+    if memory_store is not None:
+        registry.register(MemoryTool(memory_store))
     return registry

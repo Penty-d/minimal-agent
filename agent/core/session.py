@@ -36,10 +36,11 @@ class Session:
     state: str = "idle"                     # idle / busy
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
+    memory_store: object = None             # 跨会话长期记忆（全局共享）
 
     def __post_init__(self):
         self.todos = TodoStore()
-        self.registry = build_session_registry(self.todos)
+        self.registry = build_session_registry(self.todos, self.memory_store)
 
     def touch(self):
         self.updated_at = time.time()
@@ -58,20 +59,21 @@ class Session:
         }
 
     @classmethod
-    def from_dict(cls, d: dict, system_prompt: str, max_context_tokens: int, summarizer=None) -> "Session":
+    def from_dict(cls, d: dict, system_prompt: str, max_context_tokens: int, summarizer=None, memory_block=None, memory_store=None) -> "Session":
         session = cls(
             id=d["id"],
             name=d.get("name", d["id"]),
             context=ContextManager.from_dict(
-                d.get("context", {}), system_prompt, max_context_tokens, summarizer
+                d.get("context", {}), system_prompt, max_context_tokens, summarizer, memory_block
             ),
+            memory_store=memory_store,
         )
         session.history = [Message.from_dict(m) for m in d.get("history", [])]
         session.state = d.get("state", "idle")
         session.created_at = d.get("created_at", time.time())
         session.updated_at = d.get("updated_at", time.time())
         session.todos = TodoStore.from_dict(d.get("todos", {}))
-        session.registry = build_session_registry(session.todos)
+        session.registry = build_session_registry(session.todos, memory_store)
         return session
 
 
@@ -82,6 +84,7 @@ class SessionManager:
         system_prompt: str = "",
         max_context_tokens: int = 6000,
         summarizer=None,
+        memory_store=None,
     ):
         self._sessions: dict[str, Session] = {}
         self._lock = threading.RLock()
@@ -89,7 +92,15 @@ class SessionManager:
         self.system_prompt = system_prompt
         self.max_context_tokens = max_context_tokens
         self.summarizer = summarizer
+        self.memory_store = memory_store      # 跨会话长期记忆（全局共享）
         self._load_all()
+
+    def _memory_block(self):
+        """跨会话记忆索引：会话组装请求时注入 context（实时读取全局 store）。"""
+        if self.memory_store is None:
+            return None
+        block = self.memory_store.render_block()
+        return block or None
 
     # ------------------------------------------------------------------
     def create(self, name: str | None = None) -> Session:
@@ -97,7 +108,11 @@ class SessionManager:
             session = Session(
                 id=_new_sid(name),
                 name=name or "会话",
-                context=ContextManager(self.system_prompt, self.max_context_tokens, self.summarizer),
+                context=ContextManager(
+                    self.system_prompt, self.max_context_tokens, self.summarizer,
+                    memory_block=self._memory_block,
+                ),
+                memory_store=self.memory_store,
             )
             self._sessions[session.id] = session
             self._persist(session)
@@ -149,7 +164,8 @@ class SessionManager:
                 with open(path, "r", encoding="utf-8") as f:
                     d = json.load(f)
                 self._sessions[d["id"]] = Session.from_dict(
-                    d, self.system_prompt, self.max_context_tokens, self.summarizer
+                    d, self.system_prompt, self.max_context_tokens,
+                    self.summarizer, self._memory_block, self.memory_store,
                 )
             except Exception as e:
                 print(f"[session] 加载失败 {fn}: {e}")

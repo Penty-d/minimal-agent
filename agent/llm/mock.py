@@ -58,9 +58,23 @@ def _default_rules() -> list[MockRule]:
         item = text.split("：")[-1].split(":")[-1].strip() or text
         return RawLLMResponse(tool_calls=[_tool_call("todo", {"operation": "add", "item": item}, 3)])
 
+    def memory_recall(text: str) -> RawLLMResponse:
+        query = re.sub(r"^(还记得|记得|回忆)\s*[:：]?\s*", "", text).strip() or text
+        return RawLLMResponse(tool_calls=[_tool_call("memory", {"operation": "recall", "query": query}, 4)])
+
+    def memory_save(text: str) -> RawLLMResponse:
+        content = re.sub(r"^(记住|请记住|记好)\s*[:：]?\s*", "", text).strip() or text
+        type_ = "偏好" if re.search(r"(偏好|习惯)", text) else "事实"
+        return RawLLMResponse(
+            tool_calls=[_tool_call("memory", {"operation": "save", "content": content, "type": type_}, 5)]
+        )
+
     return [
         # 提到天气，或提到某个已知城市（追问"那上海呢"时，模型会结合上下文理解为查上海天气）
         MockRule(re.compile(r"天气|" + "|".join(CITIES)), weather),
+        # 先判"记得/回忆"（再判"记住/偏好"，避免"还记得我的偏好吗"被当成保存）
+        MockRule(re.compile(r"记得|回忆"), memory_recall),
+        MockRule(re.compile(r"记住|偏好|习惯|长期记忆"), memory_save),
         MockRule(re.compile(r"计算|多少|等于|求和|\d+\s*[-+*/]\s*\d+"), calculator),
         MockRule(re.compile(r"搜索|查一查|查一下", re.I), search),
         MockRule(re.compile(r"记(下|录)?|待办|todo|周报|备忘"), todo),

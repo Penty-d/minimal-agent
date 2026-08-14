@@ -216,11 +216,15 @@ def main() -> None:
             print(paint(DIM, "提示：配置 .env 后重试，或加 --mock 以离线模式运行。"))
             return
 
+    from agent.core.memory import MemoryStore
+
+    memory_store = MemoryStore(f"{settings.data_dir}/memory.json")
     sessions = SessionManager(
         store_dir=f"{settings.data_dir}/sessions",
         system_prompt=settings.system_prompt,
         max_context_tokens=settings.max_context_tokens,
         summarizer=make_summarizer(llm),
+        memory_store=memory_store,
     )
     trace = TraceLogger(settings.logs_dir)
     runtime = AgentRuntime(llm=llm, sessions=sessions, trace=trace, settings=settings)

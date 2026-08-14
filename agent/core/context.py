@@ -47,11 +47,12 @@ class BuildInfo:
 
 
 class ContextManager:
-    def __init__(self, system_prompt: str, max_context_tokens: int = 6000, summarizer=None):
+    def __init__(self, system_prompt: str, max_context_tokens: int = 6000, summarizer=None, memory_block=None):
         self.system_prompt = system_prompt
         self.max_context_tokens = max_context_tokens
         self.summarizer = summarizer        # callable(old_summary, dropped_text) -> new_summary
-        self.summary = ""                   # 滚动摘要（长期记忆）
+        self.memory_block = memory_block    # callable() -> 跨会话记忆索引文本 | None
+        self.summary = ""                   # 滚动摘要（会话内长期记忆）
         self._folded = 0                    # 已折叠进摘要的前缀消息数
 
     # ------------------------------------------------------------------
@@ -63,9 +64,12 @@ class ContextManager:
         """
         info = BuildInfo()
 
+        memory_text = self.memory_block() if self.memory_block else None
+
         reserve = (
             estimate_tokens(self.system_prompt)
             + estimate_tokens(self.summary)
+            + estimate_tokens(memory_text or "")
             + _MARGIN
         )
         budget = max(100, self.max_context_tokens - reserve)
@@ -81,6 +85,9 @@ class ContextManager:
                 info.summary = self.summary
 
         messages: list[dict] = [{"role": "system", "content": self.system_prompt}]
+        if memory_text:
+            # 跨会话记忆索引：system 之后、会话摘要之前（全局锚点）
+            messages.append({"role": "system", "content": f"[跨会话记忆]\n{memory_text}"})
         if self.summary:
             messages.append({"role": "system", "content": f"[历史对话摘要]\n{self.summary}"})
         messages.extend(m.to_api() for m in kept)
@@ -156,8 +163,8 @@ class ContextManager:
         return {"summary": self.summary, "folded": self._folded}
 
     @classmethod
-    def from_dict(cls, d: dict, system_prompt: str, max_context_tokens: int, summarizer=None) -> "ContextManager":
-        cm = cls(system_prompt=system_prompt, max_context_tokens=max_context_tokens, summarizer=summarizer)
+    def from_dict(cls, d: dict, system_prompt: str, max_context_tokens: int, summarizer=None, memory_block=None) -> "ContextManager":
+        cm = cls(system_prompt=system_prompt, max_context_tokens=max_context_tokens, summarizer=summarizer, memory_block=memory_block)
         cm.summary = d.get("summary", "")
         cm._folded = d.get("folded", 0)
         return cm
