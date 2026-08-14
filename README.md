@@ -1,11 +1,12 @@
 # minimal-agent
 
-从零实现的最小可用 Agent Runtime。主流程（决策循环、输出解析、上下文管理、会话隔离、工具调度）全部自实现，不依赖任何 Agent 框架（langgraph / openhands / openclaw 等）。LLM 调用走 OpenAI 兼容协议，默认对接 DeepSeek V4。
+从零实现的最小可用 Agent Runtime。主流程（决策循环、输出解析、上下文管理、会话隔离、工具调度）全部自实现，不依赖任何 Agent 框架（langgraph / openhands / openclaw 等）。LLM 调用走 OpenAI 兼容协议。
 
 ## 特性
 
 - **自实现主循环**：接收输入 → 模型决策 → 调用工具 → 结果回喂 → 直到最终答案
 - **工具注册机制**：每个工具暴露名称 / 描述 / 参数 JSON Schema，模型自主决策调用
+- **真实搜索**：`search` 工具基于必应 RSS 返回真实网页结果，网络不可用时回退内置演示数据
 - **输出解析**：同时支持结构化 `tool_calls` 与文本标签（`<tool_call>`）两条路径，容错处理非法 JSON
 - **多会话隔离 + 持久化**：窗口 1 的待办与历史不会出现在窗口 2，重启后自动恢复
 - **Context 管理**：token 预算、干净截断（保持工具调用配对完整）、增量摘要压缩
@@ -73,7 +74,7 @@ python -m pytest tests/ -q
 | `agent/llm/parser.py` | 输出解析：结构化 `tool_calls` + 文本 `<tool_call>` 双路径，容错 |
 | `agent/llm/mock.py` | 离线 Mock：与真实客户端同接口，脚本/规则两种模式 |
 | `agent/llm/summary.py` | 对话摘要器：Context 压缩用 |
-| `agent/tools/` | 工具契约 + 注册表 + 四个内置工具 |
+| `agent/tools/` | 工具契约 + 注册表 + 内置工具（calculator / search / weather / todo） |
 | `agent/core/context.py` | token 预算、干净截断、增量摘要 |
 | `agent/core/session.py` | 会话隔离、JSON 持久化 |
 | `agent/core/runtime.py` | 主循环：busy 状态、异常分层、消息配对 |
@@ -114,9 +115,9 @@ python -m pytest tests/ -q
 | `LLM_API_KEY` | （必填） | API Key，仅从环境变量读取，不进仓库 |
 | `LLM_BASE_URL` | `https://api.deepseek.com/v1` | OpenAI 兼容端点 |
 | `LLM_MODEL` | `deepseek-v4-flash` | 模型名 |
-| `MAX_CONTEXT_TOKENS` | `128000` | 单次请求上下文 token 预算（模型支持 1M，此处取实用值） |
+| `MAX_CONTEXT_TOKENS` | `128000` | 单次请求上下文 token 预算 |
 | `MAX_LOOP_TURNS` | `8` | 单条输入最大工具轮次 |
-| `TEMPERATURE` | `1.0` | 采样温度（官网推荐 1.0；思考模式下不生效） |
+| `TEMPERATURE` | `1.0` | 采样温度
 
 ## 目录结构
 
@@ -137,4 +138,5 @@ minimal-agent/
 - **"从零实现"的边界**：不使用 Agent 框架；使用标准工具库（httpx、python-dotenv、pytest）。
 - **切换服务商**：改 `LLM_BASE_URL` 与 `LLM_MODEL` 两个配置项即可对接 GLM / Qwen / 豆包 / OpenAI 等兼容端点。
 - **安全**：calculator 使用 AST 白名单求值，拒绝 `eval` 类注入；`.env` 被 `.gitignore` 排除。
+- **搜索实现**：`search` 工具用必应 `format=rss` 免 Key 轻量接口返回真实结果；网络不可用时回退内置演示数据。后端可注入，便于替换为带 Key 的正式搜索 API。
 - **AI 辅助开发记录**：见 [`docs/AI-PROMPT-LOG.md`](docs/AI-PROMPT-LOG.md)。
