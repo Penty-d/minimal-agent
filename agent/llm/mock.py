@@ -87,10 +87,19 @@ class MockLLM:
             if "[internal" in (m.get("content") or ""):
                 return RawLLMResponse(content="（摘要）用户此前的对话已归纳为摘要。")
 
-        last_user = next(
-            (m["content"] for m in reversed(messages) if m.get("role") == "user"),
-            "",
+        # 找到最后一条 user 消息的位置
+        last_user_idx = max(
+            (i for i, m in enumerate(messages) if m.get("role") == "user"),
+            default=None,
         )
+
+        # 工具结果出现在最后一条 user 之后 → 模型已拿到信息，直接作答
+        if last_user_idx is not None:
+            results = [m["content"] for m in messages[last_user_idx + 1:] if m.get("role") == "tool"]
+            if results:
+                return RawLLMResponse(content=f"（mock 已基于工具结果回答）\n{results[-1]}")
+
+        last_user = messages[last_user_idx]["content"] if last_user_idx is not None else ""
         for rule in self._rules:
             if rule.pattern.search(last_user):
                 return rule.respond(last_user)

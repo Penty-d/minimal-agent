@@ -55,14 +55,17 @@ class ContextManager:
         self._folded = 0                    # 已折叠进摘要的前缀消息数
 
     # ------------------------------------------------------------------
-    def build_request(self, history: list[Message], user_input: str) -> tuple[list[dict], BuildInfo]:
-        """组装一次请求的完整 message 列表。"""
+    def build_request(self, history: list[Message]) -> tuple[list[dict], BuildInfo]:
+        """组装一次请求的完整 message 列表。
+
+        用户输入由调用方先写入 history（保证持久化完整），这里只负责
+        截断 + 加摘要 + 组装。
+        """
         info = BuildInfo()
 
         reserve = (
             estimate_tokens(self.system_prompt)
             + estimate_tokens(self.summary)
-            + estimate_tokens(user_input)
             + _MARGIN
         )
         budget = max(100, self.max_context_tokens - reserve)
@@ -81,7 +84,6 @@ class ContextManager:
         if self.summary:
             messages.append({"role": "system", "content": f"[历史对话摘要]\n{self.summary}"})
         messages.extend(m.to_api() for m in kept)
-        messages.append({"role": "user", "content": user_input})
         return messages, info
 
     # ------------------------------------------------------------------
