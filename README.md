@@ -8,7 +8,7 @@
 - **工具注册机制**：每个工具暴露名称 / 描述 / 参数 JSON Schema，模型自主决策调用
 - **真实搜索**：`search` 工具基于必应 RSS 返回真实网页结果，网络不可用时回退内置演示数据
 - **输出解析**：同时支持结构化 `tool_calls` 与文本标签（`<tool_call>`）两条路径，容错处理非法 JSON
-- **多会话隔离 + 持久化**：窗口 1 的待办与历史不会出现在窗口 2，重启后自动恢复
+- **多会话隔离 + 持久化**：窗口 1 的待办与历史不会出现在窗口 2；启动默认新建会话，旧会话保留在磁盘可用 `/use` 切回，`--resume` 恢复最近会话
 - **Context 管理**：token 预算、干净截断（保持工具调用配对完整）、增量摘要压缩
 - **执行 trace**：每步执行落 JSONL，可回放调试
 - **双模式**：真实 API / 离线 Mock（无需 Key 即可运行与测试）
@@ -18,8 +18,9 @@
 ```bash
 pip install -r requirements.txt
 cp .env.example .env      # 填入 LLM_API_KEY（DeepSeek）
-python -m agent.main                # 真实 API
+python -m agent.main                # 真实 API（启动新建会话）
 python -m agent.main --mock         # 离线 Mock（无需 Key）
+python -m agent.main --resume       # 启动时恢复最近会话
 ```
 
 REPL 内置命令（以 `/` 开头）：`/new <名称>` 新建会话、`/use <id|名称>` 切换会话、`/sessions` 列出会话、`/reset` 清空当前会话、`/help`、`/exit`。

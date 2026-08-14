@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 
 from agent.config import load_settings
 from agent.core.runtime import AgentRuntime, SessionBusyError
@@ -178,11 +179,18 @@ def _repl(runtime: AgentRuntime, sessions: SessionManager, current, mock: bool) 
             print(paint(GREEN, answer))
 
 
-def _initial_session(sessions: SessionManager):
+def _launch_session(sessions: SessionManager, resume: bool):
+    """启动时的会话：默认新建一个会话；--resume 时恢复最近使用过的会话。
+
+    新启动 = 新会话；旧会话保留在磁盘，通过 /use 显式切回。
+    """
     rows = sessions.list()
-    if not rows:
-        return sessions.create("default")
-    return max(rows, key=lambda s: s.updated_at)   # 恢复到最近使用的会话
+    if resume and rows:
+        session = max(rows, key=lambda s: s.updated_at)
+        print(paint(CYAN, f"已恢复最近会话：{session.name}"))
+        _show_history(session)
+        return session
+    return sessions.create(time.strftime("会话 %m-%d %H:%M:%S"))
 
 
 # ----------------------------------------------------------------------
@@ -192,6 +200,7 @@ def _initial_session(sessions: SessionManager):
 def main() -> None:
     parser = argparse.ArgumentParser(description="minimal-agent 命令行")
     parser.add_argument("--mock", action="store_true", help="使用离线 MockLLM（无需 API Key）")
+    parser.add_argument("--resume", action="store_true", help="启动时恢复最近使用过的会话（默认新建）")
     args = parser.parse_args()
 
     _enable_ansi()
@@ -217,9 +226,7 @@ def main() -> None:
     runtime = AgentRuntime(llm=llm, sessions=sessions, trace=trace, settings=settings)
 
     print(paint(DIM, f"trace 日志：{trace.path}"))
-    current = _initial_session(sessions)
-    if current.history:                     # 启动恢复旧会话时回显历史
-        _show_history(current)
+    current = _launch_session(sessions, args.resume)
     try:
         _repl(runtime, sessions, current, args.mock)
     finally:
