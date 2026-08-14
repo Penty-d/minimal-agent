@@ -114,9 +114,9 @@ python -m pytest tests/ -q
 | `LLM_API_KEY` | （必填） | API Key，仅从环境变量读取，不进仓库 |
 | `LLM_BASE_URL` | `https://api.deepseek.com/v1` | OpenAI 兼容端点 |
 | `LLM_MODEL` | `deepseek-v4-flash` | 模型名 |
-| `MAX_CONTEXT_TOKENS` | `6000` | 单次请求上下文 token 预算 |
+| `MAX_CONTEXT_TOKENS` | `128000` | 单次请求上下文 token 预算（模型支持 1M，此处取实用值） |
 | `MAX_LOOP_TURNS` | `8` | 单条输入最大工具轮次 |
-| `TEMPERATURE` | `0.3` | 采样温度 |
+| `TEMPERATURE` | `1.0` | 采样温度（官网推荐 1.0；思考模式下不生效） |
 
 ## 目录结构
 
