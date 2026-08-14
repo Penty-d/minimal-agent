@@ -49,17 +49,18 @@ def paint(code: str, text: str) -> str:
 GREEN, RED, CYAN, BOLD, DIM = "32", "31", "36", "1", "2"
 
 
-def _show_history(session, limit: int = 12) -> None:
-    """回显会话历史：用户提问与 Agent 回答完整显示，工具调用只给摘要。
+def _show_history(session) -> None:
+    """回显完整会话历史：用户提问与 Agent 回答完整显示，工具调用只给摘要。
 
     工具结果与思考过程属于内部过程，回显时跳过；但模型输出必须完整，
-    因为切回旧会话是要接着聊。
+    因为切回旧会话是要接着聊。完整历史保存在 session.history 中，
+    上下文压缩不影响它。
     """
-    hist = session.history[-limit:]
+    hist = session.history
     if not hist:
         print(paint(DIM, "（该会话暂无对话记录）"))
         return
-    print(paint(BOLD, f"—— 会话「{session.name}」历史 ——"))
+    print(paint(BOLD, f"—— 会话「{session.name}」完整历史 ——"))
     for m in hist:
         if m.role == "user":
             print(f"你: {m.content}")
