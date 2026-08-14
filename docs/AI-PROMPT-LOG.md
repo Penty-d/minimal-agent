@@ -20,51 +20,60 @@
 
 ## 二、遇到的问题与解决
 
-### 1. DeepSeek 协议与印象不符 → 联网核实官方文档
+### 1. 回溯 session 历史时 UI 未回显
 
-实现前按旧印象以为模型名是 `deepseek-chat`、思考过程不传回。联网核对 `api-docs.deepseek.com` 后发现：
+vibecoding 之后，在使用 /use 命令时，我发现对话历史并未回显，用户对先前对话内容一无所知，即使 session 中已经有详细的对话记录。
 
-- 当前模型为 `deepseek-v4-flash` / `deepseek-v4-pro`
-- 思考模式默认开启，响应带 `reasoning_content`
-- **带 `tool_calls` 的 assistant 消息在后续请求中需回传 `reasoning_content`**（部分版本否则报 400）
-- `arguments` 是 JSON 字符串，且"模型不一定生成合法 JSON"
+解决：添加历史记录回显，并修正 AI 设置的 12 轮对话记录 limit。
 
-解决：配置改为新模型名；`Message.to_api()` 只对带 `tool_calls` 的 assistant 消息回传 `reasoning_content`；解析器对 arguments 做容错。
+### 2. 模型回答在历史回显中被截断
 
-### 2. 截断破坏 tool 配对 → API 400
+回显时发现 Agent 的回答被截断（只显示前 120 字），切回旧会话看不到完整的模型输出，没法接着聊。
 
-Context 截断时按 token 预算从旧到新切，结果可能以一条 `tool` 消息开头——而协议要求 `tool` 消息紧跟产生它的 `assistant` 消息。解决：截断后修边界，丢掉孤立的 tool 消息；并在 runtime 中用"请求列表一次组装、循环追加"保证配对永远成立。
+解决：回显不再截断用户提问与模型回答，完整多行显示；只有工具调用给摘要。
 
-### 3. 用户输入未写入历史 → 持久化缺 user 轮
+### 3. session 记录污染
 
-初版只在请求里追加用户消息，没写进 `session.history`，导致持久化不完整、追问断档。解决：`_run_loop` 先 `history.append(user_msg)` 再组装请求。
+解决完历史记录回显问题后，重启对话发现 agent 的不同 session 的上下文全部混杂，于是追查文件，发现只有一份 session，是 vibecoding 时设计失误。每次新启动 agent 时还默认保持上次 session 内容。
 
-### 4. Mock 规则式无限重调同一工具
+解决：改为每次打开 agent 都新起一个 session；旧会话保留在磁盘，用 /use 显式切回，--resume 可恢复最近会话。
 
-规则式 Mock 每次看"最后一条 user 消息"；工具结果回喂后没有新的 user 消息，于是无限重调同一工具直到撞轮次上限。解决：Mock 识别"最后一条 user 之后存在 tool 结果"，视为模型已拿到信息、直接作答——模拟真实模型行为。
+### 4. search 工具没法真正搜索
 
-### 5. calculator 的 eval 注入风险
+search 初版是罐头 mock，按关键词查写死的字典，未命中就返回兜底文本，名不副实。
 
-`eval` 可执行任意代码（`__import__('os')` 等）。解决：用 `ast.parse` + 白名单遍历，只放行数字/四则/幂/括号/白名单函数与常量，从语法层拒绝危险节点；除零等错误转成文本回喂模型。
+解决：改用必应 RSS（format=rss）免 Key 返回真实网页结果，国内网络可用；网络不可用时回退内置演示数据，工具永不崩；后端可注入，便于日后替换为带 Key 的正式搜索 API。
 
-### 6. "从零实现"的边界理解
+### 5. DeepSeek 协议与印象不符
 
-最初连 `.env` 加载器都手写，过于极端。确认约束本质是"不依赖 Agent 框架"，标准工具库（httpx、python-dotenv、pytest）可用。改为 `python-dotenv`。
+实现前以为模型名是 deepseek-chat、思考过程不回传。联网核对官方文档发现：当前模型是 deepseek-v4-flash / pro，思考模式默认开启，带 tool_calls 的 assistant 消息在后续请求中需要回传 reasoning_content（否则部分版本报 400），且 arguments 是 JSON 字符串、模型不一定生成合法 JSON。
 
-### 7. 工具描述与实现不一致
+解决：配置改用新模型名；Message 序列化时只对带 tool_calls 的 assistant 消息回传 reasoning_content；解析器对 arguments 做容错。
 
-calculator 描述示例写了 `5^2`，但实现只支持 `**`（`^` 在 Python 中是异或）。导致"契约引导模型调用出错"。解决：让描述与实现完全一致。
+### 6. calculator 工具描述与实现不一致
 
-### 8. 非确定系统的测试
+描述示例写了 `5^2`，但实现只支持 `**`（`^` 在 Python 中是异或），模型照描述调用会失败。
 
-Agent 行为依赖 LLM，直接测不稳定。解决：MockLLM 提供脚本模式（预设响应序列），精确复现"调工具→回答/连续调/超轮次/异常"等场景，测试 runtime 逻辑本身；模型质量另用评测，不进单测。
+解决：让工具描述与实现完全一致（改为 `5**2`）。
 
-### 9. search 工具"名不副实"
+### 7. Mock 规则式无限重调同一工具
 
-初版 search 是罐头 mock（按关键词查写死的字典），"没法真正搜索"。确认题目允许 mock 但并非强制后，改为**真实搜索 + 回退**：
-- 用必应 `format=rss` 免 Key 轻量接口，返回真实网页结果（标题/链接/摘要），国内网络可用
-- 网络不可用或解析失败时回退内置演示数据，工具永不崩
-- 后端可注入，测试用假后端保持离线确定性，也便于日后替换为带 Key 的正式搜索 API
+规则式 MockLLM 只看最后一条 user 消息；工具结果回喂后没有新的 user 消息，于是无限重调同一工具直到撞轮次上限。
+
+解决：Mock 识别"最后一条 user 之后存在 tool 结果"即视为模型已拿到信息、直接作答，模拟真实模型行为。
+
+### 8. 用户输入未写入 session 历史
+
+初版只在请求里追加用户消息，没写进 session.history，导致持久化缺 user 轮、追问断档。
+
+解决：runtime 先 history.append(user_msg) 再组装请求。
+
+### 9. Context 截断破坏工具配对
+
+按 token 预算截断时，切割点可能落在 tool 消息上，导致发给 API 的请求以 tool 消息开头，违反"tool 消息必须紧跟产生它的 assistant 消息"的协议。
+
+解决：截断后修边界丢掉孤立的 tool 消息；请求列表一次组装、循环追加，保证配对永远成立。
+
 
 ## 三、给后续使用者的建议
 
