@@ -1,0 +1,97 @@
+"""MockLLM：不联网的 LLM 替身，接口与 LLMClient 保持一致。
+
+用途：
+1. 离线开发/演示：按关键字返回"该调哪个工具"，让整套 Agent 循环
+   在没有 API Key 的情况下也能跑通。
+2. 测试：支持脚本模式，预设一串 RawLLMResponse 依次返回，精确控制
+   模型行为（先调工具再回答 / 连续调工具 / 超轮次等），保证测试
+   确定性、无网络依赖。
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass, field
+
+from agent.llm.client import RawLLMResponse
+
+
+@dataclass
+class MockRule:
+    """一条规则：匹配最后一条用户消息，返回对应响应。"""
+
+    pattern: re.Pattern
+    respond: callable  # (text) -> RawLLMResponse
+
+
+def _tool_call(name: str, arguments: dict, idx: int) -> dict:
+    return {
+        "id": f"call_mock_{idx}",
+        "type": "function",
+        "function": {"name": name, "arguments": json.dumps(arguments, ensure_ascii=False)},
+    }
+
+
+CITIES = ["北京", "上海", "广州", "深圳", "杭州", "成都", "武汉", "南京", "西安", "重庆"]
+
+
+def _extract_city(text: str) -> str:
+    for c in CITIES:
+        if c in text:
+            return c
+    return "北京"
+
+
+# 默认规则：按常见指令关键字触发工具调用，其余直接回答。
+def _default_rules() -> list[MockRule]:
+    def weather(text: str) -> RawLLMResponse:
+        return RawLLMResponse(tool_calls=[_tool_call("weather", {"city": _extract_city(text)}, 0)])
+
+    def calculator(_: str) -> RawLLMResponse:
+        return RawLLMResponse(tool_calls=[_tool_call("calculator", {"expression": "1+2"}, 1)])
+
+    def search(_: str) -> RawLLMResponse:
+        return RawLLMResponse(tool_calls=[_tool_call("search", {"query": "default"}, 2)])
+
+    def todo(text: str) -> RawLLMResponse:
+        item = text.split("：")[-1].split(":")[-1].strip() or text
+        return RawLLMResponse(tool_calls=[_tool_call("todo", {"operation": "add", "item": item}, 3)])
+
+    return [
+        MockRule(re.compile(r"天气"), weather),
+        MockRule(re.compile(r"计算|多少|等于|求和|\d+\s*[-+*/]\s*\d+"), calculator),
+        MockRule(re.compile(r"搜索|查一查|查一下", re.I), search),
+        MockRule(re.compile(r"记(下|录)?|待办|todo|周报|备忘"), todo),
+    ]
+
+
+class MockLLM:
+    def __init__(self, script: list[RawLLMResponse] | None = None):
+        """script 提供时按脚本依次返回；否则走默认规则。"""
+        self._script = list(script) if script else []
+        self._rules = _default_rules()
+        self.calls: list[dict] = []          # 记录每次入参，供测试断言
+
+    # ------------------------------------------------------------------
+    def chat(self, messages, tools=None, temperature=None, max_tokens=4096) -> RawLLMResponse:
+        self.calls.append({"messages": messages, "tools": tools})
+        if self._script:
+            return self._script.pop(0)
+        return self._match(messages)
+
+    # ------------------------------------------------------------------
+    def _match(self, messages: list[dict]) -> RawLLMResponse:
+        # 内部任务（如对话摘要压缩）不套工具决策规则
+        for m in messages:
+            if "[internal" in (m.get("content") or ""):
+                return RawLLMResponse(content="（摘要）用户此前的对话已归纳为摘要。")
+
+        last_user = next(
+            (m["content"] for m in reversed(messages) if m.get("role") == "user"),
+            "",
+        )
+        for rule in self._rules:
+            if rule.pattern.search(last_user):
+                return rule.respond(last_user)
+        return RawLLMResponse(content=f"(mock) 收到：{last_user}")

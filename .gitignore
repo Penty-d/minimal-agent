@@ -1,0 +1,15 @@
+# 密钥与环境配置，绝不提交
+.env
+
+# 运行时数据
+data/
+logs/
+*.log
+trace*.jsonl
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/

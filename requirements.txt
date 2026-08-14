@@ -1,0 +1,4 @@
+# 依赖尽量少，核心逻辑全部自实现，标准工具库可用。
+httpx>=0.27         # 调用 LLM 的 /chat/completions 接口
+python-dotenv>=1.0  # 加载 .env 环境变量
+pytest>=8.0         # 测试
