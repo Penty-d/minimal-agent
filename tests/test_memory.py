@@ -1,4 +1,4 @@
-"""跨会话长期记忆测试：存取、去重、召回、持久化、工具、context 注入。"""
+"""跨会话长期记忆测试：存取、去重、持久化、工具、context 注入。"""
 
 import pytest
 
@@ -32,40 +32,24 @@ def test_save_dedup_merges_duplicates(tmp_path):
     assert len(store.list()) == 2
 
 
-def test_recall_matches_relevant(tmp_path):
-    store = _tmp_store(tmp_path)
-    store.save("用户喜欢简洁回答", "偏好")
-    store.save("用户从事金融行业", "事实")
-    hits = store.recall("金融")
-    assert len(hits) == 1 and "金融" in hits[0]["content"]
-    assert "简洁" in store.recall("简洁")[0]["content"]
-
-
-def test_recall_no_match_returns_empty(tmp_path):
-    store = _tmp_store(tmp_path)
-    store.save("用户喜欢简洁回答")
-    assert store.recall("完全不相关的话题xyz") == []
-
-
 def test_persistence_roundtrip(tmp_path):
     path = str(tmp_path / "memory.json")
     store = MemoryStore(path)
     store.save("用户是前端工程师")
     store2 = MemoryStore(path)             # 重新加载
     assert len(store2.list()) == 1
-    assert "前端" in store2.recall("前端")[0]["content"]
+    assert "前端" in store2.list()[0]["content"]
 
 
 # ----------------------------------------------------------------------
 # MemoryTool
 
 
-def test_tool_save_recall_list(tmp_path):
+def test_tool_save_list(tmp_path):
     tool = MemoryTool(_tmp_store(tmp_path))
     out = tool.execute("save", content="用户偏好用中文回答", type="偏好")
     assert "已保存" in out and "(偏好)" in out
-    hits = tool.execute("recall", query="中文")
-    assert "中文" in hits
+    assert "用户偏好用中文回答" in tool.execute("list")
     assert "（长期记忆为空）" not in tool.execute("list")
 
 

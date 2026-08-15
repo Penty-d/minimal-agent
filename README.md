@@ -11,7 +11,6 @@
 - **多会话隔离 + 持久化**：窗口 1 的待办与历史不会出现在窗口 2；启动默认新建会话，旧会话保留在磁盘可用 `/use` 切回，`--resume` 恢复最近会话
 - **Context 管理**：token 预算、干净截断（保持工具调用配对完整）、增量摘要压缩
 - **执行 trace**：每步执行落 JSONL，可回放调试
-- **双模式**：真实 API / 离线 Mock（无需 Key 即可运行与测试）
 
 ## 快速开始
 
@@ -71,15 +70,15 @@ python -m pytest tests/ -q
 
 | 模块 | 职责 |
 |------|------|
-| `agent/llm/client.py` | OpenAI 兼容客户端：请求/响应、指数退避重试、`reasoning_content` 抽取 |
+| `agent/llm/client.py` | OpenAI 兼容客户端：请求/响应|
 | `agent/llm/parser.py` | 输出解析：结构化 `tool_calls` + 文本 `<tool_call>` 双路径，容错 |
 | `agent/llm/mock.py` | 离线 Mock：与真实客户端同接口，脚本/规则两种模式 |
 | `agent/llm/summary.py` | 对话摘要器：Context 压缩用 |
 | `agent/tools/` | 工具契约 + 注册表 + 内置工具（calculator / search / weather / todo） |
-| `agent/core/context.py` | token 预算、干净截断、增量摘要 |
+| `agent/core/context.py` | 上下文拼装，截断|
 | `agent/core/session.py` | 会话隔离、JSON 持久化 |
 | `agent/core/runtime.py` | 主循环：busy 状态、异常分层、消息配对 |
-| `agent/core/trace.py` | 执行日志（JSONL） |
+| `agent/core/trace.py` | 执行日志 |
 
 ### Agent 决策循环
 
@@ -96,13 +95,12 @@ python -m pytest tests/ -q
 
 ### 跨会话长期记忆（memory）
 
-对标 Claude Code 的自动记忆：**写入由模型蒸馏成一句事实、会话开始全量注入、需要时按短语过滤**（不做分词）。
+**由llm判断是否需要写入memory，并将关键信息以短句的形式写入，以免占据过多context**。
 
 | 环节 | 召回/写入时机 | 放置方式 |
 |------|--------------|----------|
 | 写入 | 对话中：模型判断"值得长期记住"时调 `memory.save`，把对话**蒸馏成一句事实**；高度相似（互相包含）自动合并去重 | 落盘 `data/memory.json`，所有会话共享 |
-| 会话开始召回（主） | 每次组装请求（`build_request`）时注入记忆**句子**（`- [id] (类型) 一句话`，封顶 15 条） | **system 之后**、会话摘要之前（全局锚点） |
-| 对话中召回（辅） | 模型需要时调 `memory.recall(query)`，按**整句/短语精确过滤**（不做分词——中文切词难做对） | 工具结果（tool 消息） |
+| 会话开始召回 | 每次组装请求（`build_request`）时注入记忆**句子**（`- [id] (类型) 一句话`，封顶 15 条） | **system 之后**、会话摘要之前（全局锚点） |
 
 升级方向（未实现）：embedding 语义检索 + 重要度/新鲜度融合评分（Mem0 / Generative Agents 的做法，见 docs）。
 

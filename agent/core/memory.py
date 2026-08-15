@@ -2,8 +2,7 @@
 
 对标 Claude Code 的自动记忆，保持最简：
 - 一条记忆 = 一句事实（由模型蒸馏，不存对话原文）
-- 会话开始把记忆句子全量注入 context（主召回途径）
-- 需要时按整句/短语精确过滤（不做分词/切片——中文切词难做对）
+- 召回 = 会话开始把记忆句子全量注入 context（不做按需检索）
 
 落盘 data/memory.json，所有会话共享，重启后仍在。
 """
@@ -58,18 +57,6 @@ class MemoryStore:
 
     def list(self) -> list[dict]:
         return list(self._entries)
-
-    def recall(self, query: str, top_k: int = 5) -> list[dict]:
-        """按整句/短语精确过滤（不做分词）。无命中返回空列表。
-
-        主召回途径是会话开始的全量注入；这里是按需过滤，用于记忆较多时
-        或模型想确认某条细节。
-        """
-        q = (query or "").strip().lower()
-        if not q:
-            return []
-        hits = [e for e in self._entries if q in e["content"].lower()]
-        return hits[:top_k]
 
     def render_block(self, max_entries: int = 15) -> str:
         """渲染记忆句子（新→旧），供会话开始时注入 context。"""
